@@ -170,61 +170,113 @@ if (id) {
         };
     })();
 
-    function fetchAllSources() {
-        return fetch(baseURL + '/')
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var bySource = data.tests && data.tests.bySource ? data.tests.bySource : {};
-                var sourceNames = Object.keys(bySource);
-                if (!sourceNames.length) throw new Error('no sources');
+    function buildApiEndpoint(mediaId, season, episode) {
+        return season
+            ? baseURL + '/api/tv?id=' + encodeURIComponent(mediaId) + '&season=' + encodeURIComponent(season) + '&episode=' + encodeURIComponent(episode || '1')
+            : baseURL + '/api/movie?id=' + encodeURIComponent(mediaId);
+    }
 
-                return new Promise(function (resolve, reject) {
-                    var settled = 0;
-                    var total = sourceNames.length;
-                    var aggregatedSources = [];
-                    var firstResolved = false;
+    function normalizeApiSource(source) {
+        if (!source || !source.url) return null;
+        return {
+            label: source.label || source.source || 'Source',
+            source: source.source || source.label || 'source',
+            url: source.url.startsWith('/api') ? baseURL + source.url : source.url
+        };
+    }
 
-                    sourceNames.forEach(function (name) {
-                        var path = s
-                            ? bySource[name].tv.replace('/1396', '/' + id).replace('season=1', 'season=' + s).replace('episode=1', 'episode=' + (e || '1'))
-                            : bySource[name].movie.replace('/155', '/' + id);
+    function fetchApiPayload(endpoint, options) {
+        options = options || {};
+        var aggregatedSources = [];
+        var seen = {};
+        var meta = null;
+        var subtitles = [];
+        var firstResolved = false;
+        var settleOnFirst = options.settleOnFirst !== false;
+        var timeoutMs = options.timeoutMs || 45000;
 
-                        fetch(baseURL + path)
-                            .then(function (r) { return r.json(); })
-                            .then(function (d) {
-                                settled++;
-                                if (d && d.url) {
-                                    var entry = {
-                                        label: name,
-                                        source: name,
-                                        url: d.url.startsWith('/api')
-                                            ? baseURL + d.url
-                                            : d.url
-                                    };
-                                    aggregatedSources.push(entry);
-                                    if (!firstResolved) {
-                                        firstResolved = true;
-                                        resolve({ first: entry, aggregated: aggregatedSources });
-                                    }
+        function addSource(raw) {
+            var source = normalizeApiSource(raw);
+            if (!source || seen[source.url]) return null;
+            seen[source.url] = true;
+            aggregatedSources.push(source);
+            return source;
+        }
+
+        return new Promise(function (resolve, reject) {
+            var done = false;
+            var timer = null;
+            var es = null;
+
+            function finish(success) {
+                if (done) return;
+                done = true;
+                if (timer) clearTimeout(timer);
+                if (es) es.close();
+                if (success && aggregatedSources.length) {
+                    resolve({ first: aggregatedSources[0], aggregated: aggregatedSources, meta: meta, subtitles: subtitles });
+                } else if (success && (meta || subtitles.length)) {
+                    resolve({ first: null, aggregated: aggregatedSources, meta: meta, subtitles: subtitles });
+                } else {
+                    reject(new Error('no working sources'));
+                }
+            }
+
+            fetch(endpoint, { headers: { Accept: 'application/json' } })
+                .then(function (r) {
+                    var contentType = (r.headers.get('content-type') || '').toLowerCase();
+                    if (!contentType.includes('application/json')) throw new Error('not json');
+                    return r.json();
+                })
+                .then(function (data) {
+                    if (done) return;
+                    meta = data.meta || meta;
+                    subtitles = data.subtitles || subtitles;
+                    (data.sources || []).forEach(addSource);
+                    if (data.url) addSource(data);
+                    finish(aggregatedSources.length > 0 || !!meta || subtitles.length > 0);
+                })
+                .catch(function () {
+                    if (done) return;
+                    if (!window.EventSource) {
+                        reject(new Error('EventSource unavailable'));
+                        return;
+                    }
+
+                    var sseEndpoint = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + 'format=sse';
+                    es = new EventSource(sseEndpoint);
+                    timer = setTimeout(function () { finish(aggregatedSources.length > 0); }, timeoutMs);
+
+                    es.onmessage = function (event) {
+                        if (!event.data) return;
+                        try {
+                            var data = JSON.parse(event.data);
+                            if (data.type === 'meta') {
+                                meta = data.meta || meta;
+                                subtitles = data.subtitles || subtitles;
+                                return;
+                            }
+                            if (data.type === 'source') {
+                                var source = addSource(data.source);
+                                if (source && settleOnFirst && !firstResolved) {
+                                    firstResolved = true;
+                                    resolve({ first: source, aggregated: aggregatedSources, meta: meta, subtitles: subtitles });
                                 }
-                                if (settled === total && !firstResolved) {
-                                    reject(new Error('no working sources'));
-                                }
-                            })
-                            .catch(function () {
-                                settled++;
-                                if (settled === total && !firstResolved) {
-                                    if (aggregatedSources.length > 0) {
-                                        firstResolved = true;
-                                        resolve({ first: aggregatedSources[0], aggregated: aggregatedSources });
-                                    } else {
-                                        reject(new Error('no working sources'));
-                                    }
-                                }
-                            });
-                    });
+                                return;
+                            }
+                            if (data.type === 'done') finish(aggregatedSources.length > 0 || !!meta || subtitles.length > 0);
+                        } catch (_) { }
+                    };
+
+                    es.onerror = function () {
+                        finish(aggregatedSources.length > 0);
+                    };
                 });
-            });
+        });
+    }
+
+    function fetchAllSources() {
+        return fetchApiPayload(baseEndpoint, { settleOnFirst: true, timeoutMs: 50000 });
     }
 
     var _allSourcesSettled = false;
@@ -3163,8 +3215,7 @@ function play(raw, videoId) {
         var nextE = parseInt(e || '1') + 1;
         var nextS = parseInt(s);
 
-        fetch(baseURL + '/api/tv?id=' + id + '&season=' + nextS + '&episode=' + nextE)
-            .then(function (r) { return r.json(); })
+        fetchApiPayload(buildApiEndpoint(id, nextS, nextE), { settleOnFirst: false, timeoutMs: 15000 })
             .then(function (d) {
                 var t = d.meta ? (d.meta.title || d.meta.name || 'Unknown') : 'Unknown';
                 nextEpLabel.textContent = 'S' + nextS + ' E' + nextE + ' \u00b7 ' + t;
@@ -3190,14 +3241,12 @@ function play(raw, videoId) {
 
             nextEpBtn.style.display = 'none';
 
-            fetch(baseURL + '/api/tv?id=' + id + '&season=' + _nextS + '&episode=' + _nextE)
-                .then(function (r) { return r.json(); })
+            fetchApiPayload(buildApiEndpoint(id, _nextS, _nextE), { settleOnFirst: false, timeoutMs: 15000 })
                 .then(function (d) {
-                    if (d.error || !d.url) {
-                        fetch(baseURL + '/api/tv?id=' + id + '&season=' + (_nextS + 1) + '&episode=1')
-                            .then(function (r) { return r.json(); })
+                    if (d.error || !d.aggregated || !d.aggregated.length) {
+                        fetchApiPayload(buildApiEndpoint(id, _nextS + 1, 1), { settleOnFirst: false, timeoutMs: 15000 })
                             .then(function (d2) {
-                                if (d2.error || !d2.url) return;
+                                if (d2.error || !d2.aggregated || !d2.aggregated.length) return;
                                 var toast = document.getElementById('now-playing-toast');
                                 var title = d2.meta ? (d2.meta.title || d2.meta.name || 'Unknown') : 'Unknown';
                                 title += ' \u00b7 S' + (_nextS + 1) + 'E1';
