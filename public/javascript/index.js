@@ -496,6 +496,50 @@ function fetchSubWithFallback(sub) {
 var langMap = {};
 var getLangCode, flagImg;
 
+var fallbackLangCodes = {
+    english: 'us',
+    spanish: 'es',
+    french: 'fr',
+    german: 'de',
+    italian: 'it',
+    portuguese: 'pt',
+    dutch: 'nl',
+    russian: 'ru',
+    japanese: 'jp',
+    korean: 'kr',
+    chinese: 'cn',
+    hindi: 'in',
+    arabic: 'sa',
+    turkish: 'tr',
+    thai: 'th',
+    vietnamese: 'vn',
+    indonesian: 'id',
+    malay: 'my',
+    polish: 'pl',
+    romanian: 'ro',
+    swedish: 'se',
+    norwegian: 'no',
+    danish: 'dk',
+    finnish: 'fi',
+    greek: 'gr',
+    hebrew: 'il',
+    hungarian: 'hu',
+    czech: 'cz',
+    ukrainian: 'ua'
+};
+
+getLangCode = function (label) {
+    if (!label) return null;
+    var key = label.toLowerCase().replace(/[^a-z]/g, ' ').trim().split(' ')[0];
+    if (langMap[key]) return Array.from(langMap[key])[0];
+    return fallbackLangCodes[key] || null;
+};
+
+flagImg = function (code) {
+    if (!code) return '<span style="width:26px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa-solid fa-globe" style="font-size:13px;color:rgba(255,255,255,0.3);"></i></span>';
+    return '<img class="slg-flag" src="https://flagcdn.com/20x15/' + code + '.png" width="26" height="20" alt="">';
+};
+
 fetch('https://restcountries.com/v3.1/all?fields=cca2,languages')
     .then(function (res) {
         return res.json();
@@ -515,18 +559,8 @@ fetch('https://restcountries.com/v3.1/all?fields=cca2,languages')
             }
         }
 
-        getLangCode = function (label) {
-            if (!label) return null;
-            var key = label.toLowerCase().replace(/[^a-z]/g, ' ').trim().split(' ')[0];
-            return langMap[key] ? Array.from(langMap[key])[0] : null;
-        };
-
-        flagImg = function (code) {
-            if (!code) return '<span style="width:26px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa-solid fa-globe" style="font-size:13px;color:rgba(255,255,255,0.3);"></i></span>';
-            return '<img class="slg-flag" src="https://flagcdn.com/20x15/' + code + '.png" width="26" height="20" alt="">';
-        };
-
-    });
+    })
+    .catch(function () { });
 
 function play(raw, videoId) {
     (function () {
