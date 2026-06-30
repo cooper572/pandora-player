@@ -1,5 +1,5 @@
 var TMDB_KEY = '338a47b75eab45d9e64e67088f910f93';
-var baseURL = "https://whoscooper-api.hf.space";
+var baseURL = "https://pandora-api.cooper-webp.workers.dev";
 
 var alive = true;
 var shouldHideLoader = false;
@@ -480,7 +480,7 @@ function fetchSubDirect(sub) {
 }
 
 function fetchSubViaProxy(sub) {
-    var proxyUrl = baseURL + '/api/proxy?url=' + encodeURIComponent(sub.url);
+    var proxyUrl = baseURL + '/api?url=' + encodeURIComponent(sub.url) + '&vn=1';
     return testSubtitle(Object.assign({}, sub, {
         url: proxyUrl,
         headers: { 'Referer': new URL(sub.url).origin + '/', 'Origin': new URL(sub.url).origin }
@@ -1436,7 +1436,7 @@ function play(raw, videoId) {
         });
     }
 
-    var PROXY = baseURL + '/api/proxy?url=';
+    var PROXY = baseURL + '/api?url=';
     var vylaEndpoint = s
         ? (baseURL + '/api/subtitles/tv/' + id + '/' + s + '/' + (e || '1'))
         : (baseURL + '/api/subtitles/movie/' + id);
@@ -1552,7 +1552,7 @@ function play(raw, videoId) {
                 return cues;
             })
             .catch(function (err) {
-                var proxyUrl = PROXY + encodeURIComponent(url);
+                var proxyUrl = PROXY + encodeURIComponent(url) + '&vn=1';
                 return fetch(proxyUrl)
                     .then(function (r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status);
