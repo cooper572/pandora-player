@@ -540,28 +540,6 @@ flagImg = function (code) {
     return '<img class="slg-flag" src="https://flagcdn.com/20x15/' + code + '.png" width="26" height="20" alt="">';
 };
 
-fetch('https://restcountries.com/v3.1/all?fields=cca2,languages')
-    .then(function (res) {
-        return res.json();
-    })
-    .then(function (data) {
-        if (!Array.isArray(data)) {
-            return;
-        }
-        for (const country of data) {
-            const cCode = country.cca2?.toLowerCase();
-            const languages = country.languages || {};
-
-            for (const [_, langName] of Object.entries(languages)) {
-                const key = langName.toLowerCase();
-                if (!langMap[key]) langMap[key] = new Set();
-                langMap[key].add(cCode);
-            }
-        }
-
-    })
-    .catch(function () { });
-
 function play(raw, videoId) {
     (function () {
         if (document.getElementById('_vyla_styles')) return;
